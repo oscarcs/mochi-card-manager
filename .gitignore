@@ -15,6 +15,7 @@ lerna-debug.log*
 .DS_Store
 .wrangler
 .dev.vars*
+worker-configuration.d.ts
 
 .idea/
 .vscode/*

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAgent } from 'agents/react'
 import { useAgentChat } from 'agents/ai-react'
 
@@ -6,17 +6,59 @@ import { AppSidebar } from './components/AppSidebar'
 import { DeckView } from './components/views/DeckView'
 import { GenerateView } from './components/views/GenerateView'
 import { SettingsView } from './components/views/SettingsView'
-import { mockDecks } from './data/mockDecks'
 import { buildStarterPrompt, extractCardsFromAssistantResponse, extractMessageText } from './lib/cardGeneration'
-import { activateDeck, findActiveDeck, findNodeById, toggleDeck } from './lib/deckTree'
-import type { MainView } from './types/decks'
+import { activateDeck, buildDeckTree, findActiveDeck, findNodeById, toggleDeck } from './lib/deckTree'
+import type { DeckTreeNode, MainView, MochiDeck, MochiListResponse } from './types/decks'
+
+const FALLBACK_DECK: DeckTreeNode = {
+  id: 'loading',
+  name: 'Loading…',
+  kind: 'deck',
+}
 
 export default function App() {
-  const [decks, setDecks] = useState(mockDecks)
+  const [decks, setDecks] = useState<DeckTreeNode[]>([])
+  const [decksLoading, setDecksLoading] = useState(true)
+  const [decksError, setDecksError] = useState<string | null>(null)
+  const [decksRefreshedAt, setDecksRefreshedAt] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<MainView>('deck')
   const [prompt, setPrompt] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const activeDeck = findActiveDeck(decks) ?? mockDecks[0]
+  const activeDeck = findActiveDeck(decks) ?? decks[0] ?? FALLBACK_DECK
+
+  const refreshDecks = useCallback(async () => {
+    setDecksLoading(true)
+    setDecksError(null)
+
+    try {
+      const allDecks: MochiDeck[] = []
+      let bookmark: string | undefined
+
+      do {
+        const params = bookmark ? `?bookmark=${bookmark}` : ''
+        const res = await fetch(`/api/decks${params}`)
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch decks: ${res.status}`)
+        }
+
+        const data: MochiListResponse<MochiDeck> = await res.json()
+        allDecks.push(...data.docs)
+        bookmark = data.docs.length > 0 ? data.bookmark : undefined
+      } while (bookmark)
+
+      setDecks(buildDeckTree(allDecks))
+      setDecksRefreshedAt(new Date())
+    } catch (err) {
+      setDecksError(err instanceof Error ? err.message : 'Failed to load decks')
+    } finally {
+      setDecksLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshDecks()
+  }, [refreshDecks])
   const agent = useAgent({
     agent: 'MochiCardAgent',
     name: 'default',
@@ -67,6 +109,10 @@ export default function App() {
     <div className="flex h-full w-full bg-[#262626] text-[#e0e0e0] font-sans antialiased text-left select-none">
       <AppSidebar
         decks={decks}
+        decksLoading={decksLoading}
+        decksError={decksError}
+        decksRefreshedAt={decksRefreshedAt}
+        onRefreshDecks={refreshDecks}
         activeScreen={mainView}
         activeDeckId={activeDeck.id}
         onGenerateCards={handleShowGenerateView}
