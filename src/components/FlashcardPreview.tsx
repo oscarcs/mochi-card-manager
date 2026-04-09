@@ -1,7 +1,9 @@
 import { ArrowDown, MoreHorizontal } from 'lucide-react'
 
 export type FlashcardPreviewProps = {
+  title?: string
   prompt: string
+  detail?: string
   actionLabel: string
   actionShortcut?: string
   onOpenMenu?: () => void
@@ -9,7 +11,9 @@ export type FlashcardPreviewProps = {
 }
 
 export function FlashcardPreview({
+  title,
   prompt,
+  detail,
   actionLabel,
   actionShortcut,
   onOpenMenu,
@@ -28,10 +32,22 @@ export function FlashcardPreview({
         </button>
       </div>
 
-      <div className="flex flex-1 items-center justify-center px-12 pb-6">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-12 pb-6 text-center">
+        {title ? (
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#8A8A8A]">
+            {title}
+          </p>
+        ) : null}
+
         <p className="text-[15px] font-medium tracking-wide text-[#E8E8E8]">
           {prompt}
         </p>
+
+        {detail ? (
+          <p className="max-w-[360px] text-[12px] leading-5 text-[#A8A8A8]">
+            {detail}
+          </p>
+        ) : null}
       </div>
 
       <button

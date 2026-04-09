@@ -12,6 +12,7 @@ export type DeckTreeNode = {
 
 export type DeckTreeProps = {
   nodes: DeckTreeNode[]
+  selectedNodeId?: string | null
   onCreateDeck?: () => void
   onSelectNode?: (nodeId: string) => void
   onToggleNode?: (nodeId: string) => void
@@ -19,6 +20,7 @@ export type DeckTreeProps = {
 
 type DeckTreeItemProps = {
   node: DeckTreeNode
+  selectedNodeId?: string | null
   depth?: number
   onSelectNode?: (nodeId: string) => void
   onToggleNode?: (nodeId: string) => void
@@ -26,69 +28,85 @@ type DeckTreeItemProps = {
 
 function DeckTreeItem({
   node,
+  selectedNodeId,
   depth = 0,
   onSelectNode,
   onToggleNode,
 }: DeckTreeItemProps) {
   const hasChildren = Boolean(node.children?.length)
+  const isExpandable = node.kind === 'deck'
   const Icon = node.kind === 'notes' ? FileText : Book
+  const isSelected = node.id === selectedNodeId
 
-  const handleClick = () => {
-    if (hasChildren) {
-      onToggleNode?.(node.id)
-      return
-    }
-
+  const handleSelect = () => {
     onSelectNode?.(node.id)
   }
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={handleClick}
-        className={`group flex w-full items-center justify-between rounded-md px-1 py-1.5 text-left text-[13px] font-medium transition-colors ${
-          node.isActive
+      <div
+        className={`group flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-left text-[13px] font-medium transition-colors ${
+          isSelected
             ? 'bg-[#323232] text-[#E0E0E0]'
             : 'cursor-pointer text-[#B0B0B0] hover:bg-[#323232]'
         }`}
-        style={depth === 0 ? undefined : { marginLeft: depth * 22 }}
       >
-        <span className="flex items-center gap-1.5">
-          {hasChildren ? (
-            node.isExpanded ? (
-              <ChevronDown className="h-[14px] w-[14px] text-[#A0A0A0]" />
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1.5"
+          style={depth === 0 ? undefined : { paddingLeft: depth * 12 }}
+        >
+          <button
+            type="button"
+            onClick={() => onToggleNode?.(node.id)}
+            disabled={!isExpandable}
+            className={`flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center ${
+              isExpandable ? 'cursor-pointer' : 'cursor-default'
+            }`}
+            aria-label={isExpandable ? (node.isExpanded ? 'Collapse deck' : 'Expand deck') : undefined}
+          >
+            {isExpandable ? (
+              node.isExpanded ? (
+                <ChevronDown className="h-[12px] w-[12px] text-[#8C8C8C]" />
+              ) : (
+                <ChevronRight className="h-[12px] w-[12px] text-[#6A6A6A]" />
+              )
             ) : (
-              <ChevronRight className="h-[14px] w-[14px] text-[#606060]" />
-            )
-          ) : (
-            <ChevronRight className="h-[14px] w-[14px] text-[#606060] opacity-0 group-hover:opacity-100" />
-          )}
-          <Icon className="h-[16px] w-[16px] text-[#A0A0A0]" />
-          <span>{node.name}</span>
-        </span>
+              <ChevronRight className="h-[12px] w-[12px] text-[#606060] opacity-0" />
+            )}
+          </button>
+          <Icon className="h-[13px] w-[13px] text-[#A0A0A0]" />
+          <button
+            type="button"
+            onClick={handleSelect}
+            className="min-w-0 cursor-pointer truncate text-left"
+          >
+            {node.name}
+          </button>
+        </div>
 
         {typeof node.count === 'number' ? (
-          <span className="rounded-full bg-[#444444] px-1.5 py-[1px] text-[10px] font-bold text-[#A0A0A0]">
+          <span className="ml-auto rounded-full bg-[#444444] px-1.5 py-[1px] text-[10px] font-bold text-[#A0A0A0]">
             {node.count}
           </span>
         ) : null}
-      </button>
+      </div>
 
-      {hasChildren && node.isExpanded ? (
-        <div
-          className="my-0.5 flex flex-col gap-0.5 border-l border-[#3a3a3a] pl-2"
-          style={{ marginLeft: depth * 22 + 22 }}
-        >
+      {isExpandable && node.isExpanded ? (
+        <div className="my-0.5 flex flex-col gap-0.5">
           {node.children?.map((child) => (
             <DeckTreeItem
               key={child.id}
               node={child}
+              selectedNodeId={selectedNodeId}
               depth={depth + 1}
               onSelectNode={onSelectNode}
               onToggleNode={onToggleNode}
             />
           ))}
+
+          {!hasChildren ? (
+            <p className="px-1 py-1 pl-[25px] text-[12px] text-[#6F6F6F]">No decks inside</p>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -97,6 +115,7 @@ function DeckTreeItem({
 
 export function DeckTree({
   nodes,
+  selectedNodeId,
   onCreateDeck,
   onSelectNode,
   onToggleNode,
@@ -107,6 +126,7 @@ export function DeckTree({
         <DeckTreeItem
           key={node.id}
           node={node}
+          selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onToggleNode={onToggleNode}
         />
@@ -115,10 +135,13 @@ export function DeckTree({
       <button
         type="button"
         onClick={onCreateDeck}
-        className="mt-1 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-[#7A7A7A] transition-colors hover:bg-[#323232]"
+        className="mt-1 flex w-full items-center rounded-md px-1 py-1.5 text-[13px] font-medium text-[#7A7A7A] transition-colors hover:bg-[#323232]"
       >
-        <Plus className="h-[16px] w-[16px]" />
-        <span>New Deck</span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[12px] w-[12px] flex-shrink-0" aria-hidden="true" />
+          <Plus className="h-[13px] w-[13px]" />
+          <span>New Deck</span>
+        </span>
       </button>
     </div>
   )

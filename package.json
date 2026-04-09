@@ -11,9 +11,14 @@
     "deploy": "npm run build && wrangler deploy --config dist/mochi_card_manager/wrangler.json"
   },
   "dependencies": {
+    "@cloudflare/ai-chat": "^0.4.0",
+    "agents": "^0.10.0",
+    "ai": "^6.0.154",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "workers-ai-provider": "^3.1.10",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.31.1",
