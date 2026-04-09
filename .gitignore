@@ -13,6 +13,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 .DS_Store
+.wrangler
+.dev.vars*
 
 .idea/
 .vscode/*
