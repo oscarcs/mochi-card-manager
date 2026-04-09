@@ -152,7 +152,7 @@ export function DeckCard({ card }: { card: MochiCard }) {
     <div className="mb-4 flex flex-col overflow-hidden break-inside-avoid rounded-[12px] border border-[#3E3E3E] bg-[#323232] shadow-sm">
       <CardSide
         value={front}
-        className="flex-1 p-5 text-center text-[16px] font-medium leading-relaxed text-[#E8E8E8]"
+        className="flex-1 p-5 text-center text-[14px] font-medium leading-relaxed text-[#E8E8E8]"
         emptyLabel="Empty card"
       />
 

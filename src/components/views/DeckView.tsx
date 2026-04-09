@@ -61,12 +61,9 @@ export function DeckView({ deck }: { deck: DeckTreeNode | null }) {
   }, [deck])
 
   return (
-    <section className="mx-auto flex h-full w-full max-w-[1100px] flex-col rounded-[16px] border border-[#363636] bg-[#242424] p-6 shadow-2xl">
-      <div className="shrink-0 border-b border-[#303030] pb-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#767676]">
-          Deck Preview
-        </p>
-        <h1 className="mt-2 flex items-center gap-3 text-[24px] font-semibold text-[#F2F2F2]">
+    <section className="mx-auto flex h-full w-full max-w-[1100px] flex-col">
+      <div className="shrink-0 pb-4">
+        <h1 className="flex items-center gap-3 text-[20px] font-semibold text-[#F2F2F2]">
           {deck?.name ?? 'No deck selected'}
           {cards.length > 0 && (
             <span className="rounded-full bg-[#303030] px-2.5 py-0.5 text-[14px] font-medium text-[#A0A0A0]">
@@ -76,7 +73,7 @@ export function DeckView({ deck }: { deck: DeckTreeNode | null }) {
         </h1>
       </div>
 
-      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pt-6 pr-2">
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pt-2 pr-2">
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#555] border-t-[#A0A0A0]"></div>
