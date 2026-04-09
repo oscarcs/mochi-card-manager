@@ -3,3 +3,10 @@ export type GeneratedCard = {
   back: string
   notes?: string
 }
+
+export type ProposedCard = GeneratedCard & {
+  id: string
+  deckId: string
+  status: 'pending' | 'accepted' | 'rejected'
+  error?: string
+}

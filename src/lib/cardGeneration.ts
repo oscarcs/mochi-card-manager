@@ -1,9 +1,11 @@
 import type { GeneratedCard } from '../types/cards'
+import type { MochiCard } from '../types/decks'
+import { getDisplaySides } from './mochiCards'
 
 type MessagePart = { type: string } & Record<string, unknown>
 
-export function buildStarterPrompt(deckName: string) {
-  return `Create 5 flashcards for the "${deckName}" deck. Focus on practical recall, short answers, and add brief notes when useful.`
+export function buildStarterPrompt(deckName: string, language: string) {
+  return `Generate flashcards for the "${deckName}" deck in ${language}. Focus on practical recall, short answers, and add brief notes only when they improve the card.`
 }
 
 export function extractMessageText(parts: MessagePart[]) {
@@ -46,4 +48,60 @@ export function extractCardsFromAssistantResponse(response: string): GeneratedCa
   } catch {
     return []
   }
+}
+
+export function buildGenerationPrompt({
+  language,
+  deckName,
+  examples,
+  userPrompt,
+}: {
+  language: string
+  deckName: string
+  examples: GeneratedCard[]
+  userPrompt: string
+}) {
+  const exampleBlock =
+    examples.length > 0
+      ? JSON.stringify(
+          {
+            exampleCards: examples,
+          },
+          null,
+          2
+        )
+      : 'No example cards were available from the selected deck.'
+
+  return [
+    `Target language: ${language}`,
+    `Target deck: ${deckName}`,
+    'Use the deck examples to match the level and style where appropriate.',
+    'If the user included one or more URLs, fetch them first and ground the cards in that source material.',
+    '',
+    'Example cards:',
+    exampleBlock,
+    '',
+    'Supplementary instructions:',
+    userPrompt.trim(),
+  ].join('\n')
+}
+
+export function pickExampleCards(cards: MochiCard[], count: number): GeneratedCard[] {
+  const shuffled = [...cards].sort(() => Math.random() - 0.5)
+
+  return shuffled
+    .map((card) => {
+      const { front, back } = getDisplaySides(card)
+
+      if (!front.trim() || !back.trim()) {
+        return null
+      }
+
+      return {
+        front: front.trim(),
+        back: back.trim(),
+      }
+    })
+    .filter((card): card is GeneratedCard => card !== null)
+    .slice(0, count)
 }

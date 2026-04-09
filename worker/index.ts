@@ -1,6 +1,8 @@
 import { routeAgentRequest } from 'agents'
 
 import { MochiCardAgent } from './agents/mochi-card-agent'
+import type { GeneratedCard } from '../src/types/cards'
+import { buildMochiCardContent } from '../src/lib/mochiCards'
 
 export { MochiCardAgent }
 
@@ -10,9 +12,14 @@ const MOCHI_API_BASE = 'https://app.mochi.cards/api'
 async function mochiApiFetch(
   path: string,
   apiKey: string,
-  params?: Record<string, string>
+  options?: {
+    params?: Record<string, string>
+    method?: 'GET' | 'POST'
+    body?: unknown
+  }
 ): Promise<Response> {
   const url = new URL(`${MOCHI_API_BASE}${path}`)
+  const params = options?.params
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -21,10 +28,13 @@ async function mochiApiFetch(
   }
 
   const response = await fetch(url.toString(), {
+    method: options?.method ?? 'GET',
     headers: {
       Authorization: `Basic ${btoa(apiKey + ':')}`,
       Accept: 'application/json',
+      ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
     },
+    ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
   })
 
   if (!response.ok) {
@@ -63,13 +73,39 @@ export default {
 
     if (url.pathname === '/api/decks') {
       return mochiApiFetch('/decks/', env.MOCHI_API_KEY, {
-        ...(url.searchParams.get('bookmark')
-          ? { bookmark: url.searchParams.get('bookmark')! }
-          : {}),
+        params: {
+          ...(url.searchParams.get('bookmark')
+            ? { bookmark: url.searchParams.get('bookmark')! }
+            : {}),
+        },
       })
     }
 
     if (url.pathname === '/api/cards') {
+      if (request.method === 'POST') {
+        const body = (await request.json().catch(() => null)) as
+          | {
+              deckId?: string
+              card?: GeneratedCard
+            }
+          | null
+
+        if (!body?.deckId || !body.card?.front?.trim() || !body.card?.back?.trim()) {
+          return Response.json(
+            { error: 'deckId, card.front, and card.back are required' },
+            { status: 400 }
+          )
+        }
+
+        return mochiApiFetch('/cards/', env.MOCHI_API_KEY, {
+          method: 'POST',
+          body: {
+            'deck-id': body.deckId,
+            content: buildMochiCardContent(body.card),
+          },
+        })
+      }
+
       const deckId = url.searchParams.get('deck-id')
 
       if (!deckId) {
@@ -83,7 +119,7 @@ export default {
       if (bookmark) params.bookmark = bookmark
       if (limit) params.limit = limit
 
-      return mochiApiFetch('/cards/', env.MOCHI_API_KEY, params)
+      return mochiApiFetch('/cards/', env.MOCHI_API_KEY, { params })
     }
 
     return new Response(null, { status: 404 })
