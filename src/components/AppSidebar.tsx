@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { Settings, Sparkles } from 'lucide-react'
-import { DeckTree, type DeckTreeNode } from './DeckTree'
+import type { DeckTreeNode } from '../types/decks'
+import { DeckTree } from './DeckTree'
 
 export type AppSidebarProps = {
   decks: DeckTreeNode[]

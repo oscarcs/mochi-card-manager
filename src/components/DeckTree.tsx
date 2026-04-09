@@ -1,14 +1,5 @@
 import { Book, ChevronDown, ChevronRight, FileText, Plus } from 'lucide-react'
-
-export type DeckTreeNode = {
-  id: string
-  name: string
-  kind: 'deck' | 'notes'
-  count?: number
-  isActive?: boolean
-  isExpanded?: boolean
-  children?: DeckTreeNode[]
-}
+import type { DeckTreeNode } from '../types/decks'
 
 export type DeckTreeProps = {
   nodes: DeckTreeNode[]
