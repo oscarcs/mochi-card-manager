@@ -1,55 +1,73 @@
-import { useState } from 'react'
-import './App.css'
+import { AppSidebar } from './components/AppSidebar'
+import { FlashcardPreview } from './components/FlashcardPreview'
+import type { DeckTreeNode } from './components/DeckTree'
 
-function App() {
-  const [count, setCount] = useState(0)
-  const [name, setName] = useState('unknown')
+const mockDecks: DeckTreeNode[] = [
+  {
+    id: 'generated',
+    name: 'Generated',
+    kind: 'deck',
+  },
+  {
+    id: 'finnish',
+    name: 'Finnish',
+    kind: 'deck',
+    count: 2,
+    isActive: true,
+    isExpanded: true,
+    children: [
+      {
+        id: 'finnish-puhekieli',
+        name: 'Puhekieli',
+        kind: 'deck',
+      },
+      {
+        id: 'finnish-from-english',
+        name: 'From English',
+        kind: 'deck',
+        count: 1,
+      },
+      {
+        id: 'finnish-type-1-verbs',
+        name: 'Type 1 Verbs',
+        kind: 'deck',
+      },
+      {
+        id: 'finnish-to-english',
+        name: 'To English',
+        kind: 'deck',
+        count: 1,
+      },
+    ],
+  },
+  {
+    id: 'notes',
+    name: 'Notes',
+    kind: 'notes',
+  },
+]
 
+export default function App() {
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <p className="eyebrow">Vite + React + Cloudflare Workers</p>
-        <h1>Mochi Card Manager</h1>
-        <p className="lede">
-          This app now runs with the Cloudflare Vite plugin, SPA asset routing,
-          and a Worker-backed API endpoint served from <code>/api/</code>.
-        </p>
-      </section>
+    <div className="flex h-full w-full bg-[#262626] text-[#e0e0e0] font-sans antialiased text-left select-none">
+      <AppSidebar
+        decks={mockDecks}
+        onGenerateCards={() => {}}
+        onSettingsClick={() => {}}
+        onCreateDeck={() => {}}
+        onSelectDeck={() => {}}
+        onToggleDeck={() => {}}
+      />
 
-      <section className="panel-grid">
-        <article className="panel">
-          <h2>Client state</h2>
-          <button
-            className="action-button"
-            onClick={() => setCount((currentCount) => currentCount + 1)}
-            aria-label="increment"
-          >
-            Count is {count}
-          </button>
-          <p>Increment this to confirm state stays live while you iterate.</p>
-        </article>
-
-        <article className="panel">
-          <h2>Worker API</h2>
-          <button
-            className="action-button"
-            onClick={() => {
-              fetch('/api/')
-                .then((res) => res.json() as Promise<{ name: string }>)
-                .then((data) => setName(data.name))
-            }}
-            aria-label="get name"
-          >
-            Name from API is: {name}
-          </button>
-          <p>
-            The response comes from <code>worker/index.ts</code> via the
-            Cloudflare Worker runtime.
-          </p>
-        </article>
-      </section>
-    </main>
+      <div className="relative flex h-full flex-1 items-center justify-center bg-[#282828]">
+        <FlashcardPreview
+          prompt={'In Finnish: "to think"'}
+          actionLabel="Next Side"
+          actionShortcut="Space"
+          onAdvance={() => {}}
+          onOpenMenu={() => {}}
+        />
+      </div>
+    </div>
   )
 }
-
-export default App
