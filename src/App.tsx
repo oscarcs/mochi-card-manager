@@ -7,9 +7,11 @@ import { DeckView } from './components/views/DeckView'
 import { GenerateView } from './components/views/GenerateView'
 import { SettingsView } from './components/views/SettingsView'
 import {
+  buildExistingCardDuplicateKeySet,
   buildGenerationPrompt,
   extractCardsFromAssistantResponse,
   extractMessageText,
+  filterDuplicateGeneratedCards,
   pickExampleCards,
 } from './lib/cardGeneration'
 import { activateDeck, buildDeckTree, findActiveDeck, findNodeById, toggleDeck } from './lib/deckTree'
@@ -72,6 +74,9 @@ export default function App() {
   const [exampleCards, setExampleCards] = useState<MochiCard[]>([])
   const [examplesLoading, setExamplesLoading] = useState(false)
   const [examplesError, setExamplesError] = useState<string | null>(null)
+  const [generationError, setGenerationError] = useState<string | null>(null)
+  const [lastSubmissionDuplicateKeys, setLastSubmissionDuplicateKeys] = useState<Set<string>>(() => new Set())
+  const [lastFilteredDuplicateCount, setLastFilteredDuplicateCount] = useState(0)
   const [proposedCards, setProposedCards] = useState<ProposedCard[]>([])
   const [isApprovingCards, setIsApprovingCards] = useState(false)
   const [lastSubmittedDeckId, setLastSubmittedDeckId] = useState<string>('')
@@ -196,12 +201,21 @@ export default function App() {
     : ''
   const generatedCards = extractCardsFromAssistantResponse(latestAssistantText)
   const isGenerating = status === 'submitted' || status === 'streaming'
-  const promptError = error ?? (examplesError ? new Error(examplesError) : null)
+  const promptError =
+    error ??
+    (generationError ? new Error(generationError) : null) ??
+    (examplesError ? new Error(examplesError) : null)
   const exampleCount = Math.min(exampleCards.length, GENERATION_EXAMPLE_CARD_COUNT)
 
   useEffect(() => {
+    const { uniqueCards, filteredCount } = filterDuplicateGeneratedCards(
+      generatedCards,
+      lastSubmissionDuplicateKeys
+    )
+
+    setLastFilteredDuplicateCount(filteredCount)
     setProposedCards(
-      generatedCards.map((card, index) => ({
+      uniqueCards.map((card, index) => ({
         ...card,
         id: `proposal-${Date.now()}-${index}`,
         deckId: lastSubmittedDeckId,
@@ -209,12 +223,50 @@ export default function App() {
         status: 'pending',
       }))
     )
-  }, [lastSubmittedDeckId, latestAssistantText])
+  }, [generatedCards, lastSubmissionDuplicateKeys, lastSubmittedDeckId])
+
+  async function fetchAllDeckCards(deckId: string) {
+    const allCards: MochiCard[] = []
+    let bookmark: string | undefined
+
+    do {
+      const params = new URLSearchParams({ 'deck-id': deckId })
+
+      if (bookmark) {
+        params.set('bookmark', bookmark)
+      }
+
+      const res = await fetch(`/api/cards?${params.toString()}`)
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch cards for duplicate filtering: ${res.status}`)
+      }
+
+      const data = (await res.json()) as MochiListResponse<MochiCard>
+      allCards.push(...data.docs)
+      bookmark = data.docs.length > 0 ? data.bookmark : undefined
+    } while (bookmark)
+
+    return allCards
+  }
 
   async function submitPrompt(messageText: string) {
     const nextPrompt = messageText.trim()
 
     if (!nextPrompt || isGenerating || !selectedGenerationDeck || selectedGenerationDeck.kind !== 'deck') {
+      return
+    }
+
+    setGenerationError(null)
+
+    let existingCards: MochiCard[]
+
+    try {
+      existingCards = await fetchAllDeckCards(selectedGenerationDeck.id)
+    } catch (err) {
+      setGenerationError(
+        err instanceof Error ? err.message : 'Failed to fetch cards for duplicate filtering'
+      )
       return
     }
 
@@ -227,6 +279,8 @@ export default function App() {
 
     clearHistory()
     setProposedCards([])
+    setLastFilteredDuplicateCount(0)
+    setLastSubmissionDuplicateKeys(buildExistingCardDuplicateKeySet(existingCards))
     setLastSubmittedDeckId(selectedGenerationDeck.id)
     await sendMessage({
       role: 'user',
@@ -365,6 +419,8 @@ export default function App() {
     clearHistory()
     setPrompt('')
     setProposedCards([])
+    setGenerationError(null)
+    setLastFilteredDuplicateCount(0)
   }
 
   return (
@@ -410,6 +466,7 @@ export default function App() {
             isApprovingCards={isApprovingCards}
             isLoadingExamples={examplesLoading}
             exampleCount={exampleCount}
+            filteredDuplicateCount={lastFilteredDuplicateCount}
             proposedCards={proposedCards}
             error={promptError}
           />

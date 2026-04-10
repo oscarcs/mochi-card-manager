@@ -101,3 +101,68 @@ export function pickExampleCards(cards: MochiCard[], count: number): GeneratedCa
     .filter((card): card is GeneratedCard => card !== null)
     .slice(0, count)
 }
+
+function normalizeForDuplicateCheck(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function buildFrontDuplicateKey(front: string) {
+  return `front:${normalizeForDuplicateCheck(front)}`
+}
+
+function buildFrontBackDuplicateKey(front: string, back: string) {
+  return `pair:${normalizeForDuplicateCheck(front)}|||${normalizeForDuplicateCheck(back)}`
+}
+
+export function buildExistingCardDuplicateKeySet(cards: MochiCard[]) {
+  const keys = new Set<string>()
+
+  for (const card of cards) {
+    const { front, back } = getDisplaySides(card)
+    const normalizedFront = normalizeForDuplicateCheck(front)
+    const normalizedBack = normalizeForDuplicateCheck(back)
+
+    if (!normalizedFront) {
+      continue
+    }
+
+    keys.add(buildFrontDuplicateKey(front))
+
+    if (normalizedBack) {
+      keys.add(buildFrontBackDuplicateKey(front, back))
+    }
+  }
+
+  return keys
+}
+
+export function filterDuplicateGeneratedCards(
+  cards: GeneratedCard[],
+  existingDuplicateKeys: Set<string>
+) {
+  const seenKeys = new Set(existingDuplicateKeys)
+  const uniqueCards: GeneratedCard[] = []
+  let filteredCount = 0
+
+  for (const card of cards) {
+    const frontKey = buildFrontDuplicateKey(card.front)
+    const frontBackKey = buildFrontBackDuplicateKey(card.front, card.back)
+
+    if (seenKeys.has(frontKey) || seenKeys.has(frontBackKey)) {
+      filteredCount += 1
+      continue
+    }
+
+    seenKeys.add(frontKey)
+    seenKeys.add(frontBackKey)
+    uniqueCards.push(card)
+  }
+
+  return { uniqueCards, filteredCount }
+}

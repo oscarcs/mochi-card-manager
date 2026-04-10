@@ -25,6 +25,7 @@ type GenerateViewProps = {
   isApprovingCards: boolean
   isLoadingExamples: boolean
   exampleCount: number
+  filteredDuplicateCount: number
   proposedCards: ProposedCard[]
   error: unknown
 }
@@ -34,11 +35,13 @@ function StatusCopy({
   isGenerating,
   isLoadingExamples,
   exampleCount,
+  filteredDuplicateCount,
 }: {
   error: unknown
   isGenerating: boolean
   isLoadingExamples: boolean
   exampleCount: number
+  filteredDuplicateCount: number
 }) {
   if (error instanceof Error) {
     return <p className="text-xs text-[#FF8C8C]">{error.message}</p>
@@ -53,11 +56,20 @@ function StatusCopy({
   }
 
   return (
-    <p className="text-xs text-[#8D8D8D]">
-      {exampleCount > 0
-        ? `${exampleCount} example cards from the selected deck will be included in the prompt.`
-        : 'No example cards found in the selected deck yet.'}
-    </p>
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-[#8D8D8D]">
+        {exampleCount > 0
+          ? `${exampleCount} example cards from the selected deck will be included in the prompt.`
+          : 'No example cards found in the selected deck yet.'}
+      </p>
+      {filteredDuplicateCount > 0 ? (
+        <p className="text-xs text-[#8D8D8D]">
+          Filtered out {filteredDuplicateCount} generated
+          {filteredDuplicateCount === 1 ? ' card' : ' cards'} because they matched cards already in
+          the selected deck.
+        </p>
+      ) : null}
+    </div>
   )
 }
 
@@ -237,6 +249,7 @@ export function GenerateView({
   isApprovingCards,
   isLoadingExamples,
   exampleCount,
+  filteredDuplicateCount,
   proposedCards,
   error,
 }: GenerateViewProps) {
@@ -308,6 +321,7 @@ export function GenerateView({
               isGenerating={isGenerating}
               isLoadingExamples={isLoadingExamples}
               exampleCount={exampleCount}
+              filteredDuplicateCount={filteredDuplicateCount}
             />
 
             <div className="flex items-center gap-2">
