@@ -8,7 +8,6 @@ import { GenerateView } from './components/views/GenerateView'
 import { SettingsView } from './components/views/SettingsView'
 import {
   buildGenerationPrompt,
-  buildStarterPrompt,
   extractCardsFromAssistantResponse,
   extractMessageText,
   pickExampleCards,
@@ -133,16 +132,6 @@ export default function App() {
   }, [activeDeck.id, deckOptions, generationDeckId])
 
   useEffect(() => {
-    if (!mainView || mainView !== 'generate') {
-      return
-    }
-
-    if (!prompt.trim() && selectedGenerationDeck?.name) {
-      setPrompt(buildStarterPrompt(selectedGenerationDeck.name.trim(), selectedLanguage))
-    }
-  }, [mainView, prompt, selectedGenerationDeck?.name, selectedLanguage])
-
-  useEffect(() => {
     if (!generationDeckId) {
       setExampleCards([])
       return
@@ -192,7 +181,7 @@ export default function App() {
   const agent = useAgent({
     agent: 'MochiCardAgent',
     name: 'default',
-    basePath: '/api/agents/mochi-card-agent/default',
+    basePath: 'api/agents/mochi-card-agent/default',
   })
   const { messages, sendMessage, clearHistory, status, error } = useAgentChat({
     agent,
@@ -319,7 +308,7 @@ export default function App() {
 
   function handleClearGenerationState() {
     clearHistory()
-    setPrompt(buildStarterPrompt(selectedGenerationDeck?.name?.trim() ?? activeDeck.name, selectedLanguage))
+    setPrompt('')
     setProposedCards([])
   }
 

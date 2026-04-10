@@ -189,7 +189,9 @@ export function GenerateView({
       <div className="flex min-h-0 min-w-0 flex-col gap-5 xl:h-full">
         <div>
           <p className="text-sm leading-6 text-[#AAAAAA]">
-            Choose a deck, add context, and review the proposed cards.
+            Choose a deck, add context, and review the proposed cards. Paste a link to an article,
+            lesson, or reference page directly into your instructions. The agent will retrieve the page,
+            extract the relevant text, and generate cards from it.
           </p>
         </div>
 
@@ -227,16 +229,6 @@ export function GenerateView({
               ))}
             </select>
           </label>
-        </div>
-
-        <div className="rounded-[12px] border border-[#343434] bg-[#202020] p-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#767676]">
-            Source guidance
-          </p>
-          <p className="mt-2 text-sm leading-6 text-[#A9A9A9]">
-            Paste a link to an article, lesson, or reference page directly into your instructions. The
-            agent will retrieve the page, extract the relevant text, and generate cards from it.
-          </p>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col rounded-[12px] border border-[#343434] bg-[#1F1F1F] p-4 xl:h-full">

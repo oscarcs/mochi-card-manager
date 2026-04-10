@@ -4,10 +4,6 @@ import { getDisplaySides } from './mochiCards'
 
 type MessagePart = { type: string } & Record<string, unknown>
 
-export function buildStarterPrompt(deckName: string, language: string) {
-  return `Generate flashcards for the "${deckName}" deck in ${language}. Focus on practical recall, short answers, and add brief notes only when they improve the card.`
-}
-
 export function extractMessageText(parts: MessagePart[]) {
   return parts
     .filter((part) => part.type === 'text' && typeof part.text === 'string')

@@ -6,7 +6,7 @@ import { buildMochiCardContent } from '../src/lib/mochiCards'
 
 export { MochiCardAgent }
 
-const AGENT_PREFIX = '/api/agents'
+const AGENT_PREFIX = 'api/agents'
 const MOCHI_API_BASE = 'https://app.mochi.cards/api'
 
 async function mochiApiFetch(
