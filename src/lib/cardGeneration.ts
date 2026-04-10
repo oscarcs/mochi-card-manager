@@ -71,7 +71,7 @@ export function buildGenerationPrompt({
   return [
     `Target language: ${language}`,
     `Target deck: ${deckName}`,
-    'Use the deck examples to match the level and style where appropriate.',
+    'Use the deck examples to match the level and card format.',
     'If the user included one or more URLs, fetch them first and ground the cards in that source material.',
     '',
     'Example cards:',

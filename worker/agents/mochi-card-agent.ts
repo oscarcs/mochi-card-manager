@@ -12,7 +12,7 @@ type MochiCardAgentState = {
   lastFetchedUrls: string[]
 }
 
-const SYSTEM_PROMPT = `You generate high-quality flashcards for Mochi.
+const SYSTEM_PROMPT = `You generate high-quality language learning flashcards for Mochi.
 
 Return only JSON inside a \`\`\`json code block.
 
@@ -29,10 +29,10 @@ The JSON must follow this shape:
 }
 
 Rules:
-- Prefer 4 to 8 cards unless the user explicitly asks for a different count.
+- Prefer 12 cards unless the user explicitly asks for a different count.
 - Keep "front" and "back" short.
-- Use "notes" only when it materially improves the card.
-- Use any retrieved URL content as grounding material when it is available.
+- Use "notes" very sparingly and only when there is a linguistic ambiguity that needs to be noted.
+- Use vocabulary and example sentences from URL content when it is available.
 - Do not include any prose before or after the JSON block.`
 
 function extractLatestUserText(messages: ModelMessage[]) {

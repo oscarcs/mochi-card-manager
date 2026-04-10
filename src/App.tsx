@@ -23,6 +23,7 @@ const FALLBACK_DECK: DeckTreeNode = {
 }
 
 const LAST_LANGUAGE_STORAGE_KEY = 'mochi-card-manager:last-language'
+const GENERATION_EXAMPLE_CARD_COUNT = 10
 const LANGUAGE_OPTIONS = [
   'Finnish',
   'English',
@@ -72,6 +73,7 @@ export default function App() {
   const [examplesLoading, setExamplesLoading] = useState(false)
   const [examplesError, setExamplesError] = useState<string | null>(null)
   const [proposedCards, setProposedCards] = useState<ProposedCard[]>([])
+  const [isApprovingCards, setIsApprovingCards] = useState(false)
   const [lastSubmittedDeckId, setLastSubmittedDeckId] = useState<string>('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const activeDeck = findActiveDeck(decks) ?? decks[0] ?? FALLBACK_DECK
@@ -195,7 +197,7 @@ export default function App() {
   const generatedCards = extractCardsFromAssistantResponse(latestAssistantText)
   const isGenerating = status === 'submitted' || status === 'streaming'
   const promptError = error ?? (examplesError ? new Error(examplesError) : null)
-  const exampleCount = Math.min(exampleCards.length, 4)
+  const exampleCount = Math.min(exampleCards.length, GENERATION_EXAMPLE_CARD_COUNT)
 
   useEffect(() => {
     setProposedCards(
@@ -203,6 +205,7 @@ export default function App() {
         ...card,
         id: `proposal-${Date.now()}-${index}`,
         deckId: lastSubmittedDeckId,
+        isSelected: true,
         status: 'pending',
       }))
     )
@@ -218,10 +221,12 @@ export default function App() {
     const promptWithContext = buildGenerationPrompt({
       language: selectedLanguage,
       deckName: selectedGenerationDeck.name.trim(),
-      examples: pickExampleCards(exampleCards, 4),
+      examples: pickExampleCards(exampleCards, GENERATION_EXAMPLE_CARD_COUNT),
       userPrompt: nextPrompt,
     })
 
+    clearHistory()
+    setProposedCards([])
     setLastSubmittedDeckId(selectedGenerationDeck.id)
     await sendMessage({
       role: 'user',
@@ -235,75 +240,125 @@ export default function App() {
     textareaRef.current?.focus()
   }
 
-  async function handleAcceptCard(cardId: string) {
-    const targetCard = proposedCards.find((card) => card.id === cardId)
-
-    if (!targetCard || targetCard.status !== 'pending') {
-      return
-    }
-
-    setProposedCards((current) =>
-      current.map((card) => (card.id === cardId ? { ...card, error: undefined } : card))
-    )
-
-    try {
-      const res = await fetch('/api/cards', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          deckId: targetCard.deckId,
-          card: {
-            front: targetCard.front,
-            back: targetCard.back,
-            notes: targetCard.notes,
-          },
-        }),
-      })
-
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(payload?.error ?? `Failed to create card: ${res.status}`)
-      }
-
-      setProposedCards((current) =>
-        current.map((card) =>
-          card.id === cardId
-            ? {
-                ...card,
-                status: 'accepted',
-                error: undefined,
-              }
-            : card
-        )
-      )
-    } catch (err) {
-      setProposedCards((current) =>
-        current.map((card) =>
-          card.id === cardId
-            ? {
-                ...card,
-                error: err instanceof Error ? err.message : 'Failed to create card',
-              }
-            : card
-        )
-      )
-    }
-  }
-
-  function handleRejectCard(cardId: string) {
+  function handleToggleCardSelection(cardId: string) {
     setProposedCards((current) =>
       current.map((card) =>
-        card.id === cardId
+        card.id === cardId && card.status === 'pending'
           ? {
               ...card,
-              status: 'rejected',
+              isSelected: !card.isSelected,
               error: undefined,
             }
           : card
       )
     )
+  }
+
+  function handleDeselectAllCards() {
+    setProposedCards((current) =>
+      current.map((card) =>
+        card.status === 'pending'
+          ? {
+              ...card,
+              isSelected: false,
+              error: undefined,
+            }
+          : card
+      )
+    )
+  }
+
+  function handleClearPendingCards() {
+    const hasPendingCards = proposedCards.some((card) => card.status !== 'approved')
+
+    if (!hasPendingCards || isApprovingCards) {
+      return
+    }
+
+    const shouldClear = window.confirm(
+      'Clear all pending proposed cards? This will remove any proposals that have not been added to Mochi yet.'
+    )
+
+    if (!shouldClear) {
+      return
+    }
+
+    clearHistory()
+    setProposedCards((current) => current.filter((card) => card.status === 'approved'))
+  }
+
+  async function handleApproveSelectedCards() {
+    const cardsToApprove = proposedCards.filter((card) => card.status === 'pending' && card.isSelected)
+
+    if (cardsToApprove.length === 0 || isApprovingCards) {
+      return
+    }
+
+    setIsApprovingCards(true)
+    setProposedCards((current) =>
+      current.map((card) =>
+        card.status === 'pending' && card.isSelected
+          ? {
+              ...card,
+              status: 'submitting',
+              error: undefined,
+            }
+          : card
+      )
+    )
+
+    try {
+      for (const targetCard of cardsToApprove) {
+        try {
+          const res = await fetch('/api/cards', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              deckId: targetCard.deckId,
+              card: {
+                front: targetCard.front,
+                back: targetCard.back,
+                notes: targetCard.notes,
+              },
+            }),
+          })
+
+          if (!res.ok) {
+            const payload = (await res.json().catch(() => null)) as { error?: string } | null
+            throw new Error(payload?.error ?? `Failed to create card: ${res.status}`)
+          }
+
+          setProposedCards((current) =>
+            current.map((card) =>
+              card.id === targetCard.id
+                ? {
+                    ...card,
+                    status: 'approved',
+                    isSelected: false,
+                    error: undefined,
+                  }
+                : card
+            )
+          )
+        } catch (err) {
+          setProposedCards((current) =>
+            current.map((card) =>
+              card.id === targetCard.id
+                ? {
+                    ...card,
+                    status: 'pending',
+                    error: err instanceof Error ? err.message : 'Failed to create card',
+                  }
+                : card
+            )
+          )
+        }
+      }
+    } finally {
+      setIsApprovingCards(false)
+    }
   }
 
   function handleClearGenerationState() {
@@ -313,7 +368,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full w-full select-none bg-[#262626] text-left font-sans text-[#e0e0e0] antialiased">
+    <div className="flex h-full w-full bg-[#262626] text-left font-sans text-[#e0e0e0] antialiased">
       <AppSidebar
         decks={decks}
         decksLoading={decksLoading}
@@ -346,10 +401,13 @@ export default function App() {
             onPromptChange={setPrompt}
             onSubmit={() => void submitPrompt(prompt)}
             onClear={handleClearGenerationState}
-            onAcceptCard={(cardId) => void handleAcceptCard(cardId)}
-            onRejectCard={handleRejectCard}
+            onApproveSelected={() => void handleApproveSelectedCards()}
+            onClearPendingCards={handleClearPendingCards}
+            onDeselectAllCards={handleDeselectAllCards}
+            onToggleCardSelection={handleToggleCardSelection}
             textareaRef={textareaRef}
             isGenerating={isGenerating}
+            isApprovingCards={isApprovingCards}
             isLoadingExamples={examplesLoading}
             exampleCount={exampleCount}
             proposedCards={proposedCards}

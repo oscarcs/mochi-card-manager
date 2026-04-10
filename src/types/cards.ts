@@ -7,6 +7,7 @@ export type GeneratedCard = {
 export type ProposedCard = GeneratedCard & {
   id: string
   deckId: string
-  status: 'pending' | 'accepted' | 'rejected'
+  isSelected: boolean
+  status: 'pending' | 'submitting' | 'approved'
   error?: string
 }

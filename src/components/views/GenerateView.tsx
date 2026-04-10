@@ -16,10 +16,13 @@ type GenerateViewProps = {
   onPromptChange: (value: string) => void
   onSubmit: () => void
   onClear: () => void
-  onAcceptCard: (cardId: string) => void
-  onRejectCard: (cardId: string) => void
+  onApproveSelected: () => void
+  onClearPendingCards: () => void
+  onDeselectAllCards: () => void
+  onToggleCardSelection: (cardId: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
   isGenerating: boolean
+  isApprovingCards: boolean
   isLoadingExamples: boolean
   exampleCount: number
   proposedCards: ProposedCard[]
@@ -58,14 +61,16 @@ function StatusCopy({
   )
 }
 
-function ProposalStatus({
+function ProposalMeta({
   status,
   error,
+  isSelected,
 }: {
   status: ProposedCard['status']
   error?: string
+  isSelected: boolean
 }) {
-  if (status === 'accepted') {
+  if (status === 'approved') {
     return (
       <span className="rounded-full border border-[#43614E] bg-[#213027] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#A7D0B0]">
         Added
@@ -73,10 +78,10 @@ function ProposalStatus({
     )
   }
 
-  if (status === 'rejected') {
+  if (status === 'submitting') {
     return (
-      <span className="rounded-full border border-[#5A4444] bg-[#2E2323] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D2A4A4]">
-        Rejected
+      <span className="rounded-full border border-[#525252] bg-[#303030] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#D8D8D8]">
+        Adding…
       </span>
     )
   }
@@ -90,30 +95,80 @@ function ProposalStatus({
   }
 
   return (
-    <span className="rounded-full border border-[#444444] bg-[#2C2C2C] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#A8A8A8]">
-      Proposed
+    <span
+      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+        isSelected
+          ? 'border-[#5C7566] bg-[#223128] text-[#B8D7BF]'
+          : 'border-[#444444] bg-[#2C2C2C] text-[#969696]'
+      }`}
+    >
+      {isSelected ? 'Selected' : 'Not Selected'}
     </span>
   )
 }
 
 function ProposedCardsPanel({
   proposedCards,
-  onAcceptCard,
-  onRejectCard,
+  onApproveSelected,
+  onClearPendingCards,
+  onDeselectAllCards,
+  onToggleCardSelection,
+  isApprovingCards,
 }: {
   proposedCards: ProposedCard[]
-  onAcceptCard: (cardId: string) => void
-  onRejectCard: (cardId: string) => void
+  onApproveSelected: () => void
+  onClearPendingCards: () => void
+  onDeselectAllCards: () => void
+  onToggleCardSelection: (cardId: string) => void
+  isApprovingCards: boolean
 }) {
+  const pendingCards = proposedCards.filter((card) => card.status !== 'approved')
+  const selectedPendingCards = pendingCards.filter((card) => card.isSelected)
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="pb-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#767676]">
-          Proposed Cards
-        </p>
-        <p className="mt-2 text-sm text-[#AAAAAA]">
-          Review each card and add only the ones you want to keep.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#767676]">
+              Proposed Cards
+            </p>
+            <p className="mt-2 text-sm text-[#AAAAAA]">
+              Cards start selected. Deselect anything you do not want to send to Mochi.
+            </p>
+          </div>
+
+          {proposedCards.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onClearPendingCards}
+                disabled={pendingCards.length === 0 || isApprovingCards}
+                className="rounded-full border border-[#4B4B4B] bg-[#262626] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#D0D0D0] transition-colors hover:border-[#5C5C5C] hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Clear Pending
+              </button>
+              <button
+                type="button"
+                onClick={onDeselectAllCards}
+                disabled={selectedPendingCards.length === 0 || isApprovingCards}
+                className="rounded-full border border-[#4B4B4B] bg-[#262626] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#D0D0D0] transition-colors hover:border-[#5C5C5C] hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Deselect All
+              </button>
+              <button
+                type="button"
+                onClick={onApproveSelected}
+                disabled={selectedPendingCards.length === 0 || isApprovingCards}
+                className="rounded-full border border-[#E7E2D2] bg-[#E7E2D2] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#1E1E1E] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isApprovingCards
+                  ? 'Approving…'
+                  : `Approve Selected${selectedPendingCards.length > 0 ? ` (${selectedPendingCards.length})` : ''}`}
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="custom-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
@@ -129,28 +184,26 @@ function ProposedCardsPanel({
               <DeckCard
                 key={card.id}
                 card={buildPreviewCard(card, card.deckId, card.id)}
+                className={`cursor-pointer transition-all ${
+                  card.status === 'approved'
+                    ? 'border-[#4A6554] shadow-[0_0_0_1px_rgba(95,139,105,0.22)]'
+                    : card.isSelected
+                      ? 'border-[#6E8F7A] shadow-[0_0_0_1px_rgba(115,170,132,0.75),0_0_28px_rgba(77,122,90,0.28)]'
+                      : 'border-[#3E3E3E] opacity-90'
+                }`}
+                onClick={() => {
+                  const selectedText = window.getSelection()?.toString().trim()
+
+                  if (selectedText) {
+                    return
+                  }
+
+                  onToggleCardSelection(card.id)
+                }}
                 footer={
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-3">
-                      <ProposalStatus status={card.status} error={card.error} />
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onRejectCard(card.id)}
-                          disabled={card.status !== 'pending'}
-                          className="rounded-md border border-[#4A4A4A] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#B0B0B0] transition-colors hover:bg-[#343434] hover:text-[#ECECEC] disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          Reject
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onAcceptCard(card.id)}
-                          disabled={card.status !== 'pending'}
-                          className="rounded-md bg-[#E7E2D2] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#1E1E1E] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          Accept
-                        </button>
-                      </div>
+                      <ProposalMeta status={card.status} error={card.error} isSelected={card.isSelected} />
                     </div>
                     {card.error ? <p className="text-xs text-[#FF9C9C]">{card.error}</p> : null}
                   </div>
@@ -175,10 +228,13 @@ export function GenerateView({
   onPromptChange,
   onSubmit,
   onClear,
-  onAcceptCard,
-  onRejectCard,
+  onApproveSelected,
+  onClearPendingCards,
+  onDeselectAllCards,
+  onToggleCardSelection,
   textareaRef,
   isGenerating,
+  isApprovingCards,
   isLoadingExamples,
   exampleCount,
   proposedCards,
@@ -276,7 +332,14 @@ export function GenerateView({
       </div>
 
       <div className="min-h-0 xl:h-full">
-        <ProposedCardsPanel proposedCards={proposedCards} onAcceptCard={onAcceptCard} onRejectCard={onRejectCard} />
+        <ProposedCardsPanel
+          proposedCards={proposedCards}
+          onApproveSelected={onApproveSelected}
+          onClearPendingCards={onClearPendingCards}
+          onDeselectAllCards={onDeselectAllCards}
+          onToggleCardSelection={onToggleCardSelection}
+          isApprovingCards={isApprovingCards}
+        />
       </div>
     </section>
   )

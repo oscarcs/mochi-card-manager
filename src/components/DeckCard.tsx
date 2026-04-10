@@ -37,14 +37,21 @@ function CardSide({ value, className, emptyLabel }: CardSideProps) {
 export function DeckCard({
   card,
   footer,
+  className = '',
+  onClick,
 }: {
   card: MochiCard
   footer?: ReactNode
+  className?: string
+  onClick?: () => void
 }) {
   const { front, back } = getDisplaySides(card)
 
   return (
-    <div className="mb-4 flex flex-col overflow-hidden break-inside-avoid rounded-[12px] border border-[#3E3E3E] bg-[#323232] shadow-sm">
+    <div
+      className={`mb-4 flex flex-col overflow-hidden break-inside-avoid rounded-[12px] border border-[#3E3E3E] bg-[#323232] shadow-sm ${className}`}
+      onClick={onClick}
+    >
       <CardSide
         value={front}
         className="flex-1 p-5 text-center text-[14px] font-medium leading-relaxed text-[#E8E8E8]"
