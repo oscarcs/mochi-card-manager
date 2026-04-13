@@ -1,64 +1,10 @@
-import { useEffect, useState } from 'react'
-import type { DeckTreeNode, MochiCard, MochiListResponse } from '../../types/decks'
+import { useDeckCards } from '../../hooks/useDeckCards'
+import type { DeckTreeNode } from '../../types/decks'
 import { DeckCard } from '../DeckCard'
 
 export function DeckView({ deck }: { deck: DeckTreeNode | null }) {
-  const [cards, setCards] = useState<MochiCard[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!deck || deck.kind !== 'deck') {
-      setCards([])
-      return
-    }
-
-    let isMounted = true
-    setLoading(true)
-    setError(null)
-
-    async function fetchCards() {
-      try {
-        const allCards: MochiCard[] = []
-        let bookmark: string | undefined
-
-        do {
-          const params = new URLSearchParams()
-          params.set('deck-id', deck!.id)
-          if (bookmark) {
-            params.set('bookmark', bookmark)
-          }
-
-          const res = await fetch(`/api/cards?${params.toString()}`)
-          if (!res.ok) {
-            throw new Error(`Failed to fetch cards: ${res.status}`)
-          }
-          
-          const data = (await res.json()) as MochiListResponse<MochiCard>
-          allCards.push(...data.docs)
-          bookmark = data.docs.length > 0 ? data.bookmark : undefined
-        } while (bookmark)
-
-        if (isMounted) {
-          setCards(allCards)
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Failed to load cards')
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void fetchCards()
-
-    return () => {
-      isMounted = false
-    }
-  }, [deck])
+  const deckId = deck?.kind === 'deck' ? deck.id : null
+  const { cards, loading, error } = useDeckCards(deckId)
 
   return (
     <section className="mx-auto flex h-full w-full max-w-[1100px] flex-col">

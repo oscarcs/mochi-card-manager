@@ -64,6 +64,22 @@ export function findActiveDeck(nodes: DeckTreeNode[]): DeckTreeNode | null {
   return null
 }
 
+export function flattenDeckOptions(nodes: DeckTreeNode[], depth = 0): DeckTreeNode[] {
+  return nodes.flatMap((node) => {
+    if (node.kind !== 'deck') {
+      return []
+    }
+
+    const option: DeckTreeNode = {
+      ...node,
+      name: `${'  '.repeat(depth)}${node.name}`,
+      children: undefined,
+    }
+
+    return [option, ...(node.children ? flattenDeckOptions(node.children, depth + 1) : [])]
+  })
+}
+
 export function buildDeckTree(decks: MochiDeck[]): DeckTreeNode[] {
   const nodeMap = new Map<string, DeckTreeNode>()
   const childrenMap = new Map<string, DeckTreeNode[]>()

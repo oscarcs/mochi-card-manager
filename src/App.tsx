@@ -6,17 +6,33 @@ import { AppSidebar } from './components/AppSidebar'
 import { DeckView } from './components/views/DeckView'
 import { GenerateView } from './components/views/GenerateView'
 import { SettingsView } from './components/views/SettingsView'
+import { useDeckExampleCards } from './hooks/useDeckExampleCards'
 import {
   buildExistingCardDuplicateKeySet,
   buildGenerationPrompt,
-  extractCardsFromAssistantResponse,
   extractMessageText,
-  filterDuplicateGeneratedCards,
   pickExampleCards,
 } from './lib/cardGeneration'
-import { activateDeck, buildDeckTree, findActiveDeck, findNodeById, toggleDeck } from './lib/deckTree'
+import { fetchDeckCards, fetchDecks, createDeckCard } from './lib/mochiApi'
+import {
+  buildGeneratedCardProposals,
+  deselectPendingCards,
+  keepApprovedCards,
+  markCardApproved,
+  markCardError,
+  markSelectedCardsSubmitting,
+  togglePendingCardSelection,
+} from './lib/proposedCards'
+import {
+  activateDeck,
+  buildDeckTree,
+  findActiveDeck,
+  findNodeById,
+  flattenDeckOptions,
+  toggleDeck,
+} from './lib/deckTree'
 import type { ProposedCard } from './types/cards'
-import type { DeckTreeNode, MainView, MochiCard, MochiDeck, MochiListResponse } from './types/decks'
+import type { DeckTreeNode, MainView } from './types/decks'
 
 const FALLBACK_DECK: DeckTreeNode = {
   id: 'loading',
@@ -40,22 +56,6 @@ const LANGUAGE_OPTIONS = [
   'Russian',
 ]
 
-function flattenDeckOptions(nodes: DeckTreeNode[], depth = 0): DeckTreeNode[] {
-  return nodes.flatMap((node) => {
-    if (node.kind !== 'deck') {
-      return []
-    }
-
-    const option: DeckTreeNode = {
-      ...node,
-      name: `${'  '.repeat(depth)}${node.name}`,
-      children: undefined,
-    }
-
-    return [option, ...(node.children ? flattenDeckOptions(node.children, depth + 1) : [])]
-  })
-}
-
 export default function App() {
   const [decks, setDecks] = useState<DeckTreeNode[]>([])
   const [decksLoading, setDecksLoading] = useState(true)
@@ -71,9 +71,6 @@ export default function App() {
     return window.localStorage.getItem(LAST_LANGUAGE_STORAGE_KEY) ?? LANGUAGE_OPTIONS[0]
   })
   const [generationDeckId, setGenerationDeckId] = useState<string>('')
-  const [exampleCards, setExampleCards] = useState<MochiCard[]>([])
-  const [examplesLoading, setExamplesLoading] = useState(false)
-  const [examplesError, setExamplesError] = useState<string | null>(null)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [lastSubmissionDuplicateKeys, setLastSubmissionDuplicateKeys] = useState<Set<string>>(() => new Set())
   const [lastFilteredDuplicateCount, setLastFilteredDuplicateCount] = useState(0)
@@ -94,22 +91,7 @@ export default function App() {
     setDecksError(null)
 
     try {
-      const allDecks: MochiDeck[] = []
-      let bookmark: string | undefined
-
-      do {
-        const params = bookmark ? `?bookmark=${bookmark}` : ''
-        const res = await fetch(`/api/decks${params}`)
-
-        if (!res.ok) {
-          throw new Error(`Failed to fetch decks: ${res.status}`)
-        }
-
-        const data: MochiListResponse<MochiDeck> = await res.json()
-        allDecks.push(...data.docs)
-        bookmark = data.docs.length > 0 ? data.bookmark : undefined
-      } while (bookmark)
-
+      const allDecks = await fetchDecks()
       setDecks(buildDeckTree(allDecks))
       setDecksRefreshedAt(new Date())
     } catch (err) {
@@ -127,6 +109,12 @@ export default function App() {
     window.localStorage.setItem(LAST_LANGUAGE_STORAGE_KEY, selectedLanguage)
   }, [selectedLanguage])
 
+  const {
+    cards: exampleCards,
+    loading: examplesLoading,
+    error: examplesError,
+  } = useDeckExampleCards(generationDeckId)
+
   useEffect(() => {
     if (!deckOptions.length) {
       return
@@ -138,53 +126,6 @@ export default function App() {
       setGenerationDeckId(activeDeck.id)
     }
   }, [activeDeck.id, deckOptions, generationDeckId])
-
-  useEffect(() => {
-    if (!generationDeckId) {
-      setExampleCards([])
-      return
-    }
-
-    let isMounted = true
-
-    async function fetchExampleCards() {
-      setExamplesLoading(true)
-      setExamplesError(null)
-
-      try {
-        const params = new URLSearchParams({
-          'deck-id': generationDeckId,
-          limit: '60',
-        })
-        const res = await fetch(`/api/cards?${params.toString()}`)
-
-        if (!res.ok) {
-          throw new Error(`Failed to fetch example cards: ${res.status}`)
-        }
-
-        const data = (await res.json()) as MochiListResponse<MochiCard>
-
-        if (isMounted) {
-          setExampleCards(data.docs)
-        }
-      } catch (err) {
-        if (isMounted) {
-          setExampleCards([])
-          setExamplesError(err instanceof Error ? err.message : 'Failed to load example cards')
-        }
-      } finally {
-        if (isMounted) {
-          setExamplesLoading(false)
-        }
-      }
-    }
-
-    void fetchExampleCards()
-
-    return () => {
-      isMounted = false
-    }
-  }, [generationDeckId])
 
   const agent = useAgent({
     agent: 'MochiCardAgent',
@@ -208,18 +149,15 @@ export default function App() {
   const exampleCount = Math.min(exampleCards.length, GENERATION_EXAMPLE_CARD_COUNT)
 
   useEffect(() => {
-    const generatedCards = extractCardsFromAssistantResponse(latestAssistantText)
-    const { uniqueCards, filteredCount } = filterDuplicateGeneratedCards(
-      generatedCards,
-      lastSubmissionDuplicateKeys
+    if (!latestAssistantText.trim()) {
+      return
+    }
+
+    const { proposedCards: nextProposals, filteredCount } = buildGeneratedCardProposals(
+      latestAssistantText,
+      lastSubmissionDuplicateKeys,
+      lastSubmittedDeckId
     )
-    const nextProposals = uniqueCards.map((card, index) => ({
-      ...card,
-      id: `proposal-${lastSubmittedDeckId}-${index}-${card.front}-${card.back}`,
-      deckId: lastSubmittedDeckId,
-      isSelected: true,
-      status: 'pending' as const,
-    }))
     const syncSignature = JSON.stringify({
       filteredCount,
       proposals: nextProposals,
@@ -235,44 +173,39 @@ export default function App() {
     setProposedCards(nextProposals)
   }, [latestAssistantText, lastSubmissionDuplicateKeys, lastSubmittedDeckId])
 
-  async function fetchAllDeckCards(deckId: string) {
-    const allCards: MochiCard[] = []
-    let bookmark: string | undefined
+  function resetProposalSync() {
+    lastProposalSyncSignatureRef.current = ''
+  }
 
-    do {
-      const params = new URLSearchParams({ 'deck-id': deckId })
+  function clearGeneratedCards() {
+    clearHistory()
+    resetProposalSync()
+    setProposedCards([])
+    setLastFilteredDuplicateCount(0)
+  }
 
-      if (bookmark) {
-        params.set('bookmark', bookmark)
-      }
-
-      const res = await fetch(`/api/cards?${params.toString()}`)
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch cards for duplicate filtering: ${res.status}`)
-      }
-
-      const data = (await res.json()) as MochiListResponse<MochiCard>
-      allCards.push(...data.docs)
-      bookmark = data.docs.length > 0 ? data.bookmark : undefined
-    } while (bookmark)
-
-    return allCards
+  function resetGenerationState() {
+    clearGeneratedCards()
+    setPrompt('')
+    setGenerationError(null)
+    setLastSubmissionDuplicateKeys(new Set())
+    setLastSubmittedDeckId('')
   }
 
   async function submitPrompt(messageText: string) {
     const nextPrompt = messageText.trim()
 
-    if (!nextPrompt || isGenerating || !selectedGenerationDeck || selectedGenerationDeck.kind !== 'deck') {
+    if (!nextPrompt || isGenerating || selectedGenerationDeck.kind !== 'deck') {
       return
     }
 
     setGenerationError(null)
 
-    let existingCards: MochiCard[]
+    let duplicateKeys = new Set<string>()
 
     try {
-      existingCards = await fetchAllDeckCards(selectedGenerationDeck.id)
+      const existingCards = await fetchDeckCards(selectedGenerationDeck.id)
+      duplicateKeys = buildExistingCardDuplicateKeySet(existingCards)
     } catch (err) {
       setGenerationError(
         err instanceof Error ? err.message : 'Failed to fetch cards for duplicate filtering'
@@ -287,10 +220,8 @@ export default function App() {
       userPrompt: nextPrompt,
     })
 
-    clearHistory()
-    setProposedCards([])
-    setLastFilteredDuplicateCount(0)
-    setLastSubmissionDuplicateKeys(buildExistingCardDuplicateKeySet(existingCards))
+    clearGeneratedCards()
+    setLastSubmissionDuplicateKeys(duplicateKeys)
     setLastSubmittedDeckId(selectedGenerationDeck.id)
     await sendMessage({
       role: 'user',
@@ -305,31 +236,11 @@ export default function App() {
   }
 
   function handleToggleCardSelection(cardId: string) {
-    setProposedCards((current) =>
-      current.map((card) =>
-        card.id === cardId && card.status === 'pending'
-          ? {
-              ...card,
-              isSelected: !card.isSelected,
-              error: undefined,
-            }
-          : card
-      )
-    )
+    setProposedCards((current) => togglePendingCardSelection(current, cardId))
   }
 
   function handleDeselectAllCards() {
-    setProposedCards((current) =>
-      current.map((card) =>
-        card.status === 'pending'
-          ? {
-              ...card,
-              isSelected: false,
-              error: undefined,
-            }
-          : card
-      )
-    )
+    setProposedCards((current) => deselectPendingCards(current))
   }
 
   function handleClearPendingCards() {
@@ -348,7 +259,8 @@ export default function App() {
     }
 
     clearHistory()
-    setProposedCards((current) => current.filter((card) => card.status === 'approved'))
+    resetProposalSync()
+    setProposedCards((current) => keepApprovedCards(current))
   }
 
   async function handleApproveSelectedCards() {
@@ -359,63 +271,19 @@ export default function App() {
     }
 
     setIsApprovingCards(true)
-    setProposedCards((current) =>
-      current.map((card) =>
-        card.status === 'pending' && card.isSelected
-          ? {
-              ...card,
-              status: 'submitting',
-              error: undefined,
-            }
-          : card
-      )
-    )
+    setProposedCards((current) => markSelectedCardsSubmitting(current))
 
     try {
       for (const targetCard of cardsToApprove) {
         try {
-          const res = await fetch('/api/cards', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              deckId: targetCard.deckId,
-              card: {
-                front: targetCard.front,
-                back: targetCard.back,
-                notes: targetCard.notes,
-              },
-            }),
-          })
-
-          if (!res.ok) {
-            const payload = (await res.json().catch(() => null)) as { error?: string } | null
-            throw new Error(payload?.error ?? `Failed to create card: ${res.status}`)
-          }
-
-          setProposedCards((current) =>
-            current.map((card) =>
-              card.id === targetCard.id
-                ? {
-                    ...card,
-                    status: 'approved',
-                    isSelected: false,
-                    error: undefined,
-                  }
-                : card
-            )
-          )
+          await createDeckCard(targetCard.deckId, targetCard)
+          setProposedCards((current) => markCardApproved(current, targetCard.id))
         } catch (err) {
           setProposedCards((current) =>
-            current.map((card) =>
-              card.id === targetCard.id
-                ? {
-                    ...card,
-                    status: 'pending',
-                    error: err instanceof Error ? err.message : 'Failed to create card',
-                  }
-                : card
+            markCardError(
+              current,
+              targetCard.id,
+              err instanceof Error ? err.message : 'Failed to create card'
             )
           )
         }
@@ -426,11 +294,12 @@ export default function App() {
   }
 
   function handleClearGenerationState() {
-    clearHistory()
-    setPrompt('')
-    setProposedCards([])
-    setGenerationError(null)
-    setLastFilteredDuplicateCount(0)
+    resetGenerationState()
+  }
+
+  function handleSelectDeck(deckId: string) {
+    setDecks((currentDecks) => activateDeck(currentDecks, deckId))
+    setMainView('deck')
   }
 
   return (
@@ -446,11 +315,7 @@ export default function App() {
         onGenerateCards={handleShowGenerateView}
         onSettingsClick={() => setMainView('settings')}
         onCreateDeck={() => {}}
-        onSelectDeck={(deckId) => {
-          const nextDecks = activateDeck(decks, deckId)
-          setDecks(nextDecks)
-          setMainView('deck')
-        }}
+        onSelectDeck={handleSelectDeck}
         onToggleDeck={(deckId) => setDecks((currentDecks) => toggleDeck(currentDecks, deckId))}
       />
 
@@ -459,7 +324,7 @@ export default function App() {
           <GenerateView
             language={selectedLanguage}
             languageOptions={LANGUAGE_OPTIONS}
-            deckId={selectedGenerationDeck?.id ?? ''}
+            deckId={selectedGenerationDeck.id}
             deckOptions={deckOptions}
             prompt={prompt}
             onLanguageChange={setSelectedLanguage}
