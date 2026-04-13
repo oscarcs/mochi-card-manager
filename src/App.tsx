@@ -81,6 +81,7 @@ export default function App() {
   const [isApprovingCards, setIsApprovingCards] = useState(false)
   const [lastSubmittedDeckId, setLastSubmittedDeckId] = useState<string>('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const lastProposalSyncSignatureRef = useRef('')
   const activeDeck = findActiveDeck(decks) ?? decks[0] ?? FALLBACK_DECK
   const deckOptions = flattenDeckOptions(decks)
   const selectedGenerationDeck =
@@ -199,7 +200,6 @@ export default function App() {
   const latestAssistantText = latestAssistantMessage
     ? extractMessageText(latestAssistantMessage.parts)
     : ''
-  const generatedCards = extractCardsFromAssistantResponse(latestAssistantText)
   const isGenerating = status === 'submitted' || status === 'streaming'
   const promptError =
     error ??
@@ -208,22 +208,32 @@ export default function App() {
   const exampleCount = Math.min(exampleCards.length, GENERATION_EXAMPLE_CARD_COUNT)
 
   useEffect(() => {
+    const generatedCards = extractCardsFromAssistantResponse(latestAssistantText)
     const { uniqueCards, filteredCount } = filterDuplicateGeneratedCards(
       generatedCards,
       lastSubmissionDuplicateKeys
     )
+    const nextProposals = uniqueCards.map((card, index) => ({
+      ...card,
+      id: `proposal-${lastSubmittedDeckId}-${index}-${card.front}-${card.back}`,
+      deckId: lastSubmittedDeckId,
+      isSelected: true,
+      status: 'pending' as const,
+    }))
+    const syncSignature = JSON.stringify({
+      filteredCount,
+      proposals: nextProposals,
+    })
+
+    if (lastProposalSyncSignatureRef.current === syncSignature) {
+      return
+    }
+
+    lastProposalSyncSignatureRef.current = syncSignature
 
     setLastFilteredDuplicateCount(filteredCount)
-    setProposedCards(
-      uniqueCards.map((card, index) => ({
-        ...card,
-        id: `proposal-${Date.now()}-${index}`,
-        deckId: lastSubmittedDeckId,
-        isSelected: true,
-        status: 'pending',
-      }))
-    )
-  }, [generatedCards, lastSubmissionDuplicateKeys, lastSubmittedDeckId])
+    setProposedCards(nextProposals)
+  }, [latestAssistantText, lastSubmissionDuplicateKeys, lastSubmittedDeckId])
 
   async function fetchAllDeckCards(deckId: string) {
     const allCards: MochiCard[] = []
