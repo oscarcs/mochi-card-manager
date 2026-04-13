@@ -1,4 +1,4 @@
-import { AIChatAgent, type OnChatMessageOptions } from '@cloudflare/ai-chat'
+import { AIChatAgent } from '@cloudflare/ai-chat'
 import {
   convertToModelMessages,
   type ModelMessage,
@@ -11,6 +11,9 @@ import { createWorkersAI } from 'workers-ai-provider'
 type MochiCardAgentState = {
   lastFetchedUrls: string[]
 }
+
+const MAX_FETCHED_URLS = 3
+const URL_CONTEXT_CHAR_LIMIT = 12000
 
 const SYSTEM_PROMPT = `You generate high-quality language learning flashcards for Mochi.
 
@@ -35,26 +38,31 @@ Rules:
 - Use vocabulary and example sentences from URL content when it is available.
 - Do not include any prose before or after the JSON block.`
 
+function extractTextParts(
+  content: ModelMessage['content']
+): Array<{ type: 'text'; text: string }> {
+  if (typeof content === 'string' || !Array.isArray(content)) {
+    return []
+  }
+
+  return content.filter(
+    (part): part is { type: 'text'; text: string } =>
+      part.type === 'text' && typeof part.text === 'string'
+  )
+}
+
 function extractLatestUserText(messages: ModelMessage[]) {
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
+  const latestUserContent = [...messages].reverse().find((message) => message.role === 'user')?.content
 
-  if (!latestUserMessage) {
+  if (!latestUserContent) {
     return ''
   }
 
-  if (typeof latestUserMessage.content === 'string') {
-    return latestUserMessage.content
+  if (typeof latestUserContent === 'string') {
+    return latestUserContent
   }
 
-  if (!Array.isArray(latestUserMessage.content)) {
-    return ''
-  }
-
-  return latestUserMessage.content
-    .filter(
-      (part): part is { type: 'text'; text: string } =>
-        part.type === 'text' && typeof part.text === 'string'
-    )
+  return extractTextParts(latestUserContent)
     .map((part) => part.text)
     .join('')
 }
@@ -78,37 +86,49 @@ function stripHtml(html: string) {
     .trim()
 }
 
-async function fetchUrlContext(urls: string[]) {
-  const results = await Promise.all(
-    urls.slice(0, 3).map(async (url) => {
-      try {
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'MochiCardManager/1.0',
-          },
-        })
+function normalizeFetchedText(contentType: string, rawText: string) {
+  return contentType.includes('html') ? stripHtml(rawText) : rawText.trim()
+}
 
-        if (!response.ok) {
-          return { url, error: `HTTP ${response.status}` }
-        }
-
-        const contentType = response.headers.get('content-type') ?? ''
-        const rawText = await response.text()
-        const cleanedText = contentType.includes('html') ? stripHtml(rawText) : rawText.trim()
-
-        return {
-          url,
-          text: cleanedText.slice(0, 12000),
-        }
-      } catch (error) {
-        return {
-          url,
-          error: error instanceof Error ? error.message : 'Request failed',
-        }
-      }
+async function fetchUrlExcerpt(url: string) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'MochiCardManager/1.0',
+      },
     })
-  )
 
+    if (!response.ok) {
+      return { url, error: `HTTP ${response.status}` }
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+    const rawText = await response.text()
+    const cleanedText = normalizeFetchedText(contentType, rawText)
+
+    return {
+      url,
+      text: cleanedText.slice(0, URL_CONTEXT_CHAR_LIMIT),
+    }
+  } catch (error) {
+    return {
+      url,
+      error: error instanceof Error ? error.message : 'Request failed',
+    }
+  }
+}
+
+function formatUrlContext(results: Array<{ url: string; text: string }>) {
+  return results
+    .map(
+      (result, index) =>
+        `Source ${index + 1}: ${result.url}\nRetrieved content excerpt:\n${result.text}`
+    )
+    .join('\n\n')
+}
+
+async function fetchUrlContext(urls: string[]) {
+  const results = await Promise.all(urls.slice(0, MAX_FETCHED_URLS).map((url) => fetchUrlExcerpt(url)))
   const successfulResults = results.filter(
     (result): result is { url: string; text: string } => 'text' in result && !!result.text
   )
@@ -117,12 +137,19 @@ async function fetchUrlContext(urls: string[]) {
     return ''
   }
 
-  return successfulResults
-    .map(
-      (result, index) =>
-        `Source ${index + 1}: ${result.url}\nRetrieved content excerpt:\n${result.text}`
-    )
+  return formatUrlContext(successfulResults)
+}
+
+function buildSystemPrompt(urlContext: string) {
+  return [SYSTEM_PROMPT, urlContext ? `Retrieved URL context:\n${urlContext}` : null]
+    .filter(Boolean)
     .join('\n\n')
+}
+
+function buildAgentState(urls: string[]): MochiCardAgentState {
+  return {
+    lastFetchedUrls: urls,
+  }
 }
 
 export class MochiCardAgent extends AIChatAgent<Env, MochiCardAgentState> {
@@ -133,25 +160,18 @@ export class MochiCardAgent extends AIChatAgent<Env, MochiCardAgentState> {
   messageConcurrency = 'latest' as const
   maxPersistedMessages = 20
 
-  async onChatMessage(
-    onFinish: StreamTextOnFinishCallback<ToolSet>,
-    _options?: OnChatMessageOptions
-  ) {
+  async onChatMessage(onFinish: StreamTextOnFinishCallback<ToolSet>) {
     const workersai = createWorkersAI({ binding: this.env.AI })
     const modelMessages = await convertToModelMessages(this.messages)
     const latestUserText = extractLatestUserText(modelMessages)
     const urls = extractUrls(latestUserText)
     const urlContext = await fetchUrlContext(urls)
 
-    this.setState({
-      lastFetchedUrls: urls,
-    })
+    this.setState(buildAgentState(urls))
 
     const result = streamText({
       model: workersai('@cf/moonshotai/kimi-k2.5'),
-      system: [SYSTEM_PROMPT, urlContext ? `Retrieved URL context:\n${urlContext}` : null]
-        .filter(Boolean)
-        .join('\n\n'),
+      system: buildSystemPrompt(urlContext),
       messages: modelMessages,
       onFinish,
     })
