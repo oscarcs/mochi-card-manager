@@ -72,6 +72,7 @@ export default function App() {
   })
   const [generationDeckId, setGenerationDeckId] = useState<string>('')
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const [isPreparingGeneration, setIsPreparingGeneration] = useState(false)
   const [lastSubmissionDuplicateKeys, setLastSubmissionDuplicateKeys] = useState<Set<string>>(() => new Set())
   const [lastFilteredDuplicateCount, setLastFilteredDuplicateCount] = useState(0)
   const [proposedCards, setProposedCards] = useState<ProposedCard[]>([])
@@ -79,6 +80,7 @@ export default function App() {
   const [lastSubmittedDeckId, setLastSubmittedDeckId] = useState<string>('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const lastProposalSyncSignatureRef = useRef('')
+  const generationSubmissionLockRef = useRef(false)
   const activeDeck = findActiveDeck(decks) ?? decks[0] ?? FALLBACK_DECK
   const deckOptions = flattenDeckOptions(decks)
   const selectedGenerationDeck =
@@ -142,6 +144,7 @@ export default function App() {
     ? extractMessageText(latestAssistantMessage.parts)
     : ''
   const isGenerating = status === 'submitted' || status === 'streaming'
+  const isGenerationBusy = isPreparingGeneration || isGenerating
   const promptError =
     error ??
     (generationError ? new Error(generationError) : null) ??
@@ -195,38 +198,46 @@ export default function App() {
   async function submitPrompt(messageText: string) {
     const nextPrompt = messageText.trim()
 
-    if (!nextPrompt || isGenerating || selectedGenerationDeck.kind !== 'deck') {
+    if (
+      !nextPrompt ||
+      isGenerationBusy ||
+      generationSubmissionLockRef.current ||
+      selectedGenerationDeck.kind !== 'deck'
+    ) {
       return
     }
 
+    generationSubmissionLockRef.current = true
+    setIsPreparingGeneration(true)
     setGenerationError(null)
 
-    let duplicateKeys = new Set<string>()
-
     try {
+      let duplicateKeys = new Set<string>()
       const existingCards = await fetchDeckCards(selectedGenerationDeck.id)
       duplicateKeys = buildExistingCardDuplicateKeySet(existingCards)
+
+      const promptWithContext = buildGenerationPrompt({
+        language: selectedLanguage,
+        deckName: selectedGenerationDeck.name.trim(),
+        examples: pickExampleCards(exampleCards, GENERATION_EXAMPLE_CARD_COUNT),
+        userPrompt: nextPrompt,
+      })
+
+      clearGeneratedCards()
+      setLastSubmissionDuplicateKeys(duplicateKeys)
+      setLastSubmittedDeckId(selectedGenerationDeck.id)
+      await sendMessage({
+        role: 'user',
+        parts: [{ type: 'text', text: promptWithContext }],
+      })
     } catch (err) {
       setGenerationError(
-        err instanceof Error ? err.message : 'Failed to fetch cards for duplicate filtering'
+        err instanceof Error ? err.message : 'Failed to submit generation request'
       )
-      return
+    } finally {
+      generationSubmissionLockRef.current = false
+      setIsPreparingGeneration(false)
     }
-
-    const promptWithContext = buildGenerationPrompt({
-      language: selectedLanguage,
-      deckName: selectedGenerationDeck.name.trim(),
-      examples: pickExampleCards(exampleCards, GENERATION_EXAMPLE_CARD_COUNT),
-      userPrompt: nextPrompt,
-    })
-
-    clearGeneratedCards()
-    setLastSubmissionDuplicateKeys(duplicateKeys)
-    setLastSubmittedDeckId(selectedGenerationDeck.id)
-    await sendMessage({
-      role: 'user',
-      parts: [{ type: 'text', text: promptWithContext }],
-    })
   }
 
   function handleShowGenerateView() {
@@ -337,6 +348,7 @@ export default function App() {
             onDeselectAllCards={handleDeselectAllCards}
             onToggleCardSelection={handleToggleCardSelection}
             textareaRef={textareaRef}
+            isPreparingGeneration={isPreparingGeneration}
             isGenerating={isGenerating}
             isApprovingCards={isApprovingCards}
             isLoadingExamples={examplesLoading}

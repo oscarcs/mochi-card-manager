@@ -21,6 +21,7 @@ type GenerateViewProps = {
   onDeselectAllCards: () => void
   onToggleCardSelection: (cardId: string) => void
   textareaRef: RefObject<HTMLTextAreaElement | null>
+  isPreparingGeneration: boolean
   isGenerating: boolean
   isApprovingCards: boolean
   isLoadingExamples: boolean
@@ -32,12 +33,14 @@ type GenerateViewProps = {
 
 function StatusCopy({
   error,
+  isPreparingGeneration,
   isGenerating,
   isLoadingExamples,
   exampleCount,
   filteredDuplicateCount,
 }: {
   error: unknown
+  isPreparingGeneration: boolean
   isGenerating: boolean
   isLoadingExamples: boolean
   exampleCount: number
@@ -45,6 +48,10 @@ function StatusCopy({
 }) {
   if (error instanceof Error) {
     return <p className="text-xs text-[#FF8C8C]">{error.message}</p>
+  }
+
+  if (isPreparingGeneration) {
+    return <p className="text-xs text-[#8D8D8D]">Preparing generation request…</p>
   }
 
   if (isGenerating) {
@@ -245,6 +252,7 @@ export function GenerateView({
   onDeselectAllCards,
   onToggleCardSelection,
   textareaRef,
+  isPreparingGeneration,
   isGenerating,
   isApprovingCards,
   isLoadingExamples,
@@ -253,6 +261,8 @@ export function GenerateView({
   proposedCards,
   error,
 }: GenerateViewProps) {
+  const isGenerateDisabled = isPreparingGeneration || isGenerating || !prompt.trim() || !deckId
+
   return (
     <section className="mx-auto grid h-full min-h-0 w-full max-w-[1240px] gap-8 overflow-y-auto xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,1fr)] xl:grid-rows-[minmax(0,1fr)]">
       <div className="flex min-h-0 min-w-0 flex-col gap-5 xl:h-full">
@@ -318,6 +328,7 @@ export function GenerateView({
           <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-[#303030] pt-4">
             <StatusCopy
               error={error}
+              isPreparingGeneration={isPreparingGeneration}
               isGenerating={isGenerating}
               isLoadingExamples={isLoadingExamples}
               exampleCount={exampleCount}
@@ -328,6 +339,7 @@ export function GenerateView({
               <button
                 type="button"
                 onClick={onClear}
+                disabled={isPreparingGeneration || isGenerating}
                 className="rounded-full border border-[#4B4B4B] bg-[#262626] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#D0D0D0] transition-colors hover:border-[#5C5C5C] hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Reset
@@ -335,10 +347,10 @@ export function GenerateView({
               <button
                 type="button"
                 onClick={onSubmit}
-                disabled={isGenerating || !prompt.trim() || !deckId}
+                disabled={isGenerateDisabled}
                 className="rounded-full border border-[#E7E2D2] bg-[#E7E2D2] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#1E1E1E] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isGenerating ? 'Generating…' : 'Generate'}
+                {isPreparingGeneration ? 'Preparing…' : isGenerating ? 'Generating…' : 'Generate'}
               </button>
             </div>
           </div>
